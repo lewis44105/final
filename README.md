@@ -6,3 +6,4 @@ face_rec.py用于模型应用，配合显示器实时监测，左上角包括状
 之后cd facial_recognition
 之后如果需要录入人脸，执行该步骤，否则下一步，打开headshots_capture-picam.py并修改PERSON_NAME为需要记录的人的名字，python3 headshots_capture-picam.py运行，空格拍摄，q退出，最好至少有10张不同角度的照片，并python3 model_training.py训练模型
 执行python3 face_rec.py进入面部识别
+3.1更新：增加了LED灯作为门锁模拟，红灯表示未开锁，蓝灯表示检测到陌生人，绿灯表示开锁，-接GND（物理引脚9），R接GPIO 17（物理引脚11），G接GPIO 27（物理引脚13），B接GPIO 22（物理引脚15）
