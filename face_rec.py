@@ -11,6 +11,36 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
+
+# ↓↓↓ [新增开始]：导入GPIO库并配置RGB灯 ↓↓↓
+import RPi.GPIO as GPIO
+
+LED_R = 17
+LED_G = 27
+LED_B = 22
+
+GPIO.setmode(GPIO.BCM) # 使用BCM编号
+GPIO.setwarnings(False)
+GPIO.setup(LED_R, GPIO.OUT)
+GPIO.setup(LED_G, GPIO.OUT)
+GPIO.setup(LED_B, GPIO.OUT)
+
+# 定义换色函数，每次变色前先熄灭所有灯
+def set_led_color(color):
+    GPIO.output(LED_R, GPIO.LOW)
+    GPIO.output(LED_G, GPIO.LOW)
+    GPIO.output(LED_B, GPIO.LOW)
+    
+    if color == 'red':
+        GPIO.output(LED_R, GPIO.HIGH)
+    elif color == 'green':
+        GPIO.output(LED_G, GPIO.HIGH)
+    elif color == 'blue':
+        GPIO.output(LED_B, GPIO.HIGH)
+
+set_led_color('red') # 系统刚启动时，默认亮红灯代表上锁状态
+# ↑↑↑ [新增结束] ↑↑↑
+
 os.makedirs("intruders", exist_ok=True)
 #邮箱报警设置
 SENDER_EMAIL = "2241885388@qq.com"  
@@ -45,6 +75,7 @@ known_face_names = data["names"]
 picam2 = Picamera2()
 picam2.configure(picam2.create_preview_configuration(main={"format": 'XRGB8888', "size": (1920, 1080)}))
 picam2.start()
+
 #异步邮件警告
 def send_email_async(image_path, timestamp):
     def send():
@@ -81,12 +112,14 @@ def eye_aspect_ratio(eye_points):
     B = np.linalg.norm(np.array(eye_points[2]) - np.array(eye_points[4]))
     C = np.linalg.norm(np.array(eye_points[0]) - np.array(eye_points[3]))
     return (A + B) / (2.0 * C)
+
 #核心处理
 def process_frame(frame):
     global face_locations, face_names, blink_counter, liveness_passed, already_logged
     global is_unlocked, unlock_time, last_capture_time
     global global_status_text, global_status_color
     global current_face_name #引入全局身份缓存
+    
     if is_unlocked and (time.time() - unlock_time > 3):
         print("门已上锁")
         is_unlocked = False
@@ -95,6 +128,7 @@ def process_frame(frame):
         current_face_name = None #关门后清空身份缓存
         global_status_text = "Status: LOCKED"
         global_status_color = (0, 0, 255) 
+        set_led_color('red') # [新增]：超时自动关门后，切回红灯
 
     if not is_unlocked and global_status_text != "WARNING: INTRUDER":
         global_status_text = "Status: LOCKED"
@@ -119,7 +153,9 @@ def process_frame(frame):
         elif len(face_locations) == 0 and not is_unlocked:
             global_status_text = "Status: LOCKED"
             global_status_color = (0, 0, 255)
+            set_led_color('red') # [新增]：画面中无人时，确保亮红灯
         return frame 
+        
     face_location = face_locations[0]
     if current_face_name is None:
         #先判断能不能取到encodings
@@ -139,12 +175,14 @@ def process_frame(frame):
         else:
             current_face_name = "Unknown"
         print(f"发现人脸，初步判定为: {current_face_name}")
+        
     #根据缓存好的身份进行不同的识别
     if current_face_name == "Unknown":
         #陌生人逻辑：不需要眨眼，立刻报警抓拍
         face_names.append("Unknown")
         global_status_text = "WARNING: INTRUDER!"
         global_status_color = (0, 165, 255) 
+        set_led_color('blue') # [新增]：发现陌生人入侵，立刻亮蓝灯报警
         
         if time.time() - last_capture_time > 5:
             now = datetime.datetime.now()
@@ -184,6 +222,7 @@ def process_frame(frame):
                     unlock_time = time.time() 
                     global_status_text = f"Status: UNLOCKED ({current_face_name})"
                     global_status_color = (0, 255, 0) 
+                    set_led_color('green') # [新增]：眨眼活体检测通过，开门亮绿灯
                     
                 if not already_logged:
                     log_unlock(current_face_name)
@@ -245,3 +284,7 @@ while True:
 
 cv2.destroyAllWindows()
 picam2.stop()
+
+# ↓↓↓ [新增开始]：安全退出机制 ↓↓↓
+GPIO.cleanup() # 退出程序时释放GPIO资源，熄灭所有LED灯
+# ↑↑↑ [新增结束] ↑↑↑
