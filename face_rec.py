@@ -49,7 +49,7 @@ RECEIVER_EMAIL = "2241885388@qq.com"
 #活体检测参数以及缩放比例
 EYE_AR_THRESH = 0.22
 EYE_AR_CONSEC_FRAMES = 2
-cv_scaler = 4
+cv_scaler = 2
 # 全局状态变量
 blink_counter = 0
 liveness_passed = False
@@ -73,7 +73,7 @@ with open("encodings.pickle", "rb") as f:
 known_face_encodings = data["encodings"]
 known_face_names = data["names"]
 picam2 = Picamera2()
-picam2.configure(picam2.create_preview_configuration(main={"format": 'XRGB8888', "size": (1920, 1080)}))
+picam2.configure(picam2.create_preview_configuration(main={"format": 'XRGB8888', "size": (640, 480)}))
 picam2.start()
 
 #异步邮件警告
@@ -190,7 +190,7 @@ def process_frame(frame):
             time_formatted = now.strftime('%Y-%m-%d %H:%M:%S')
             filename = f"intruders/intruder_{now_str}.jpg"
             
-            cv2.imwrite(filename, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)) 
+            cv2.imwrite(filename, frame) 
             print(f"发现陌生人，已抓拍: {filename}")
             send_email_async(filename, time_formatted)
             last_capture_time = time.time()
