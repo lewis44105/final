@@ -11,8 +11,6 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
-
-# ↓↓↓ [新增]：引入 Flask 用于网页实时监控 ↓↓↓
 from flask import Flask, Response, render_template_string
 
 # --- GPIO & RGB灯配置 ---
@@ -74,18 +72,17 @@ face_names = []
 frame_count = 0
 start_time = time.time()
 fps = 0
-
-# ↓↓↓ [新增]：Flask Web 监控所需的全局变量与锁 ↓↓↓
+#全局变量以及锁，这里有一个线程锁，保证一张照片不会在传输到网页的同时在本地被更新，避免撕裂
 output_frame = None
 frame_lock = threading.Lock()
 app = Flask(__name__)
 
-# 极简炫酷的监控网页 HTML 模板
+#监控网页 HTML 模板，src指向一个api接口，那么浏览器就会一直更新这张图片
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>智能门锁实时监控</title>
+    <title>网页实时监看</title>
     <style>
         body { text-align: center; background-color: #222; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin-top: 50px; }
         h1 { color: #00ffcc; }
@@ -94,9 +91,7 @@ HTML_TEMPLATE = """
     </style>
 </head>
 <body>
-    <h1>🔒 智能门锁实时安防监控面板</h1>
     <img src="{{ url_for('video_feed') }}">
-    <div class="footer">Edge AI Security System - Live Feed</div>
 </body>
 </html>
 """
@@ -108,21 +103,17 @@ def index():
 def generate():
     global output_frame, frame_lock
     while True:
-        with frame_lock:
+        with frame_lock:#获取锁
             if output_frame is None:
                 continue
-            # 因为 OpenCV 默认是 BGR，为了防止网页变色，需要先转为 RGB (如果画面偏蓝，可将此行删掉直接 encode)
-            #web_frame = cv2.cvtColor(output_frame, cv2.COLOR_BGR2RGB)
-            (flag, encodedImage) = cv2.imencode(".jpg", output_frame)
+            (flag, encodedImage) = cv2.imencode(".jpg", output_frame)#压缩jpg
             if not flag:
                 continue
-        # 将图片打包成连续的 MJPEG 视频流传输
+        # 将图片打包成连续的 MJPEG 视频流传输，利用yield持续更新，利用更新的图片来实现视频流
         yield(b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n')
-
 @app.route("/video_feed")
-def video_feed():
+def video_feed():#这一段就是返回给flask的，利用generate每次yield的值，使用x-mixed-replace方法每次得到新图片就替换，并设定boundary（分隔符）告诉这个函数如何分割这一个jpg数据包
     return Response(generate(), mimetype="multipart/x-mixed-replace; boundary=frame")
-# ↑↑↑ [新增结束] ↑↑↑
 
 print("[INFO] loading encodings...")
 with open("encodings.pickle", "rb") as f:
@@ -320,14 +311,11 @@ def calculate_fps():
     return fps
 
 
-# ↓↓↓ [新增]：在主循环开始前，后台启动 Flask 服务器 ↓↓↓
-print("[INFO] 正在启动 Web 监控服务器...")
+print("启动web服务器")#加上host=“0.0.0.0”保证同一网络下的其他设备可以访问
 flask_thread = threading.Thread(target=lambda: app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False))
 flask_thread.daemon = True
 flask_thread.start()
-print("[INFO] Web 监控已就绪！请在手机或电脑浏览器中访问: http://<你树莓派的IP地址>:5000")
-# ↑↑↑ [新增结束] ↑↑↑
-
+print("http://172.20.10.2:5000")
 # 主循环
 while True:
     frame = picam2.capture_array()
@@ -337,16 +325,12 @@ while True:
     
     cv2.putText(display_frame, f"FPS: {current_fps:.1f}", (display_frame.shape[1] - 160, 45), 
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-    
-    # ↓↓↓ [新增]：将处理好的带框画面存入锁中，供网页读取 ↓↓↓
-    with frame_lock:
+    #将处理好的带框画面存入锁中，供网页读取
+    with frame_lock:#先获取锁
         output_frame = display_frame.copy()
-    
     cv2.imshow('Face Rec Running', display_frame)
-    
     if cv2.waitKey(1) == ord("q"):
         break
-
 cv2.destroyAllWindows()
 picam2.stop()
 GPIO.cleanup()
